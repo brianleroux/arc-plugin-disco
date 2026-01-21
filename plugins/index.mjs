@@ -1,6 +1,3 @@
-// import { join } from 'node:path'
-
-
 export let set = {
   customLambdas () {
     return [
@@ -52,21 +49,6 @@ export let deploy = {
           }
         ]
       }
-    }
-
-    // Grant the disco-up Lambda permissions to access S3 and DynamoDB
-    let vars = cloudformation.Resources.DiscoUpCustomLambda.Properties.Environment.Variables
-    vars.DISCO_BUCKET = {
-      Ref: 'DiscoBucket'
-    }
-    vars.DISCO_TABLE = {
-      Ref: 'DiscoTable'
-    }
-
-    // Grant the disco-down Lambda permissions to access S3 bucket
-    let downVars = cloudformation.Resources.DiscoDownCustomLambda.Properties.Environment.Variables
-    downVars.DISCO_BUCKET = {
-      Ref: 'DiscoBucket'
     }
 
     // Add IAM policy for disco-up Lambda to access the bucket and table
@@ -167,8 +149,6 @@ export let deploy = {
     )
 
     // Add Custom Resource that triggers the disco-down Lambda
-    // The BucketName Ref creates an implicit dependency - CloudFormation will
-    // invoke this custom resource (triggering cleanup) before deleting the bucket
     cloudformation.Resources.DiscoDownCustomResource = {
       Type: 'AWS::CloudFormation::CustomResource',
       Properties: {
@@ -188,6 +168,19 @@ export let deploy = {
       Properties: {
         ServiceToken: {
           'Fn::GetAtt': ['DiscoUpCustomLambda', 'Arn']
+        }
+      }
+    }
+
+    // Add DISCO_BUCKET and DISCO_TABLE to all Lambda function environment variables
+    for (const [name, resource] of Object.entries(cloudformation.Resources)) {
+      const isLambda = resource.Type === 'AWS::Lambda::Function' || resource.Type === 'AWS::Serverless::Function'
+      if (isLambda && resource.Properties?.Environment?.Variables) {
+        resource.Properties.Environment.Variables.DISCO_BUCKET = {
+          Ref: 'DiscoBucket'
+        }
+        resource.Properties.Environment.Variables.DISCO_TABLE = {
+          Ref: 'DiscoTable'
         }
       }
     }

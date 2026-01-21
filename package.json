@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "test": "node --test test/**/*.test.mjs",
     "dryrun": "arc-deploy --dry-run",
     "deploy": "arc-deploy",
     "destroy": "arc-destroy -f --app myapp"

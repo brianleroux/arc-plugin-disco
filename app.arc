@@ -10,16 +10,16 @@ disco
 
 @events
 foo
-bar
-baz
+#bar
+#baz
 
-@queues
-q
+#@queues
+#q
 
-@tables
-data
-  pk *
-  sk **
+#@tables
+#data
+#  pk *
+#  sk **
 
-@http
-get /
+#@http
+#get /

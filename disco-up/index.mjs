@@ -60,6 +60,9 @@ export async function handler (event) {
       await s3Client.send(putObjectCommand)
 
       console.log('Successfully stored resource discovery data')
+    } else if (requestType === 'Delete') {
+      // No-op for Delete events - disco-down handles cleanup
+      console.log('Delete event received - no action required for disco-up')
     }
 
     // Send success response to CloudFormation

@@ -3,7 +3,10 @@
 
 export let set = {
   customLambdas () {
-    return [{name: 'disco', src: './disco' }]
+    return [
+      { name: 'disco-up', src: './disco-up' },
+      { name: 'disco-down', src: './disco-down' }
+    ]
   }
 }
 
@@ -51,8 +54,8 @@ export let deploy = {
       }
     }
 
-    // Grant the disco Lambda permissions to access S3 and DynamoDB
-    let vars = cloudformation.Resources.DiscoCustomLambda.Properties.Environment.Variables
+    // Grant the disco-up Lambda permissions to access S3 and DynamoDB
+    let vars = cloudformation.Resources.DiscoUpCustomLambda.Properties.Environment.Variables
     vars.DISCO_BUCKET = {
       Ref: 'DiscoBucket'
     }
@@ -60,11 +63,17 @@ export let deploy = {
       Ref: 'DiscoTable'
     }
 
-    // Add IAM policy for disco Lambda to access the bucket and table
-    cloudformation.Resources.DiscoPolicy = {
+    // Grant the disco-down Lambda permissions to access S3 bucket
+    let downVars = cloudformation.Resources.DiscoDownCustomLambda.Properties.Environment.Variables
+    downVars.DISCO_BUCKET = {
+      Ref: 'DiscoBucket'
+    }
+
+    // Add IAM policy for disco-up Lambda to access the bucket and table
+    cloudformation.Resources.DiscoUpPolicy = {
       Type: 'AWS::IAM::Policy',
       Properties: {
-        PolicyName: 'DiscoResourcePolicy',
+        PolicyName: 'DiscoUpResourcePolicy',
         PolicyDocument: {
           Statement: [
             {
@@ -115,18 +124,70 @@ export let deploy = {
       }
     }
 
+    // Add IAM policy for disco-down Lambda to clean up S3 bucket
+    cloudformation.Resources.DiscoDownPolicy = {
+      Type: 'AWS::IAM::Policy',
+      Properties: {
+        PolicyName: 'DiscoDownResourcePolicy',
+        PolicyDocument: {
+          Statement: [
+            {
+              Effect: 'Allow',
+              Action: [
+                's3:ListBucket',
+                's3:ListBucketVersions'
+              ],
+              Resource: {
+                'Fn::GetAtt': ['DiscoBucket', 'Arn']
+              }
+            },
+            {
+              Effect: 'Allow',
+              Action: [
+                's3:DeleteObject',
+                's3:DeleteObjectVersion'
+              ],
+              Resource: {
+                'Fn::Sub': '${DiscoBucket.Arn}/*'
+              }
+            }
+          ]
+        },
+        Roles: [
+          {
+            Ref: 'Role'
+          }
+        ]
+      }
+    }
+
     // Collect all resource names to add as dependencies
     const allResources = Object.keys(cloudformation.Resources).filter(
-      name => name !== 'DiscoCustomResource' // Don't depend on itself
+      name => name !== 'DiscoUpCustomResource' // Don't depend on itself
     )
 
-    // Add Custom Resource that triggers the disco Lambda
-    cloudformation.Resources.DiscoCustomResource = {
+    // Add Custom Resource that triggers the disco-down Lambda
+    // The BucketName Ref creates an implicit dependency - CloudFormation will
+    // invoke this custom resource (triggering cleanup) before deleting the bucket
+    cloudformation.Resources.DiscoDownCustomResource = {
+      Type: 'AWS::CloudFormation::CustomResource',
+      Properties: {
+        ServiceToken: {
+          'Fn::GetAtt': ['DiscoDownCustomLambda', 'Arn']
+        },
+        BucketName: {
+          Ref: 'DiscoBucket'
+        }
+      }
+    }
+
+    // Add Custom Resource that triggers the disco-up Lambda
+    cloudformation.Resources.DiscoUpCustomResource = {
       Type: 'AWS::CloudFormation::CustomResource',
       DependsOn: allResources,
       Properties: {
         ServiceToken: {
-          'Fn::GetAtt': ['DiscoCustomLambda', 'Arn']
+          'Fn::GetAtt': ['DiscoUpCustomLambda', 'Arn']
         }
       }
     }

@@ -75,11 +75,13 @@ describe('Plugin Configuration', () => {
     // Check environment variables
     assert.ok(result.Resources.DiscoUpCustomLambda.Properties.Environment.Variables.DISCO_BUCKET)
     assert.ok(result.Resources.DiscoUpCustomLambda.Properties.Environment.Variables.DISCO_TABLE)
+    assert.ok(result.Resources.DiscoUpCustomLambda.Properties.Environment.Variables.DISCO_STACK_ID)
     assert.ok(result.Resources.DiscoDownCustomLambda.Properties.Environment.Variables.DISCO_BUCKET)
     assert.ok(result.Resources.DiscoDownCustomLambda.Properties.Environment.Variables.DISCO_TABLE)
+    assert.ok(result.Resources.DiscoDownCustomLambda.Properties.Environment.Variables.DISCO_STACK_ID)
   })
 
-  it('should add DISCO_BUCKET and DISCO_TABLE to all Lambda functions', async () => {
+  it('should add DISCO_BUCKET, DISCO_TABLE, and DISCO_STACK_ID to all Lambda functions', async () => {
     const mockCloudFormation = {
       Resources: {
         MyAppLambda: {
@@ -138,26 +140,68 @@ describe('Plugin Configuration', () => {
       cloudformation: mockCloudFormation
     })
 
-    // Check all Lambda functions have DISCO_BUCKET and DISCO_TABLE
+    // Check all Lambda functions have DISCO_BUCKET, DISCO_TABLE, and DISCO_STACK_ID
     assert.ok(result.Resources.MyAppLambda.Properties.Environment.Variables.DISCO_BUCKET)
     assert.ok(result.Resources.MyAppLambda.Properties.Environment.Variables.DISCO_TABLE)
+    assert.ok(result.Resources.MyAppLambda.Properties.Environment.Variables.DISCO_STACK_ID)
     assert.strictEqual(result.Resources.MyAppLambda.Properties.Environment.Variables.EXISTING_VAR, 'value')
     
     assert.ok(result.Resources.AnotherLambda.Properties.Environment.Variables.DISCO_BUCKET)
     assert.ok(result.Resources.AnotherLambda.Properties.Environment.Variables.DISCO_TABLE)
+    assert.ok(result.Resources.AnotherLambda.Properties.Environment.Variables.DISCO_STACK_ID)
     
     // Check AWS::Serverless::Function also gets the env vars
     assert.ok(result.Resources.ServerlessFunction.Properties.Environment.Variables.DISCO_BUCKET)
     assert.ok(result.Resources.ServerlessFunction.Properties.Environment.Variables.DISCO_TABLE)
+    assert.ok(result.Resources.ServerlessFunction.Properties.Environment.Variables.DISCO_STACK_ID)
     assert.strictEqual(result.Resources.ServerlessFunction.Properties.Environment.Variables.SOME_VAR, 'test')
     
     assert.ok(result.Resources.DiscoUpCustomLambda.Properties.Environment.Variables.DISCO_BUCKET)
     assert.ok(result.Resources.DiscoUpCustomLambda.Properties.Environment.Variables.DISCO_TABLE)
+    assert.ok(result.Resources.DiscoUpCustomLambda.Properties.Environment.Variables.DISCO_STACK_ID)
     
     assert.ok(result.Resources.DiscoDownCustomLambda.Properties.Environment.Variables.DISCO_BUCKET)
     assert.ok(result.Resources.DiscoDownCustomLambda.Properties.Environment.Variables.DISCO_TABLE)
+    assert.ok(result.Resources.DiscoDownCustomLambda.Properties.Environment.Variables.DISCO_STACK_ID)
     
     // Non-Lambda resources should not be affected
     assert.ok(!result.Resources.NotALambda.Properties)
+  })
+
+  it('should use CloudFormation intrinsic functions for DISCO_STACK_ID', async () => {
+    const mockCloudFormation = {
+      Resources: {
+        TestLambda: {
+          Type: 'AWS::Lambda::Function',
+          Properties: {
+            Environment: {
+              Variables: {}
+            }
+          }
+        },
+        Role: {}
+      }
+    }
+
+    const result = await deploy.start({
+      arc: {},
+      cloudformation: mockCloudFormation
+    })
+
+    const stackIdVar = result.Resources.TestLambda.Properties.Environment.Variables.DISCO_STACK_ID
+    
+    // Verify it uses Fn::Select to extract the UUID from the StackId ARN
+    assert.ok(stackIdVar['Fn::Select'], 'Should use Fn::Select')
+    assert.strictEqual(stackIdVar['Fn::Select'][0], 2, 'Should select index 2 (the UUID part)')
+    
+    // Verify it splits the StackId by '/'
+    const splitFunction = stackIdVar['Fn::Select'][1]
+    assert.ok(splitFunction['Fn::Split'], 'Should use Fn::Split')
+    assert.strictEqual(splitFunction['Fn::Split'][0], '/', 'Should split by /')
+    
+    // Verify it references AWS::StackId
+    const stackIdRef = splitFunction['Fn::Split'][1]
+    assert.ok(stackIdRef.Ref, 'Should reference AWS::StackId')
+    assert.strictEqual(stackIdRef.Ref, 'AWS::StackId', 'Should reference AWS::StackId pseudo-parameter')
   })
 })

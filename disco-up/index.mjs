@@ -1,11 +1,14 @@
 import { CloudFormationClient, DescribeStackResourcesCommand } from '@aws-sdk/client-cloudformation'
 import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { extractStackId } from './stack-id-extractor.mjs'
+import { organizeByPragma } from './pragma-organizer.mjs'
 
 export async function handler (event) {
   console.log('Custom Resource Event:', JSON.stringify(event, null, 2))
 
   const requestType = event.RequestType
+  const stackId = extractStackId(event.StackId)
   const stackName = event.StackId.split('/')[1]
   
   // Always respond to CloudFormation
@@ -19,6 +22,16 @@ export async function handler (event) {
 
   try {
     if (requestType === 'Create' || requestType === 'Update') {
+      // Validate environment variables
+      if (!process.env.DISCO_BUCKET || !process.env.DISCO_TABLE) {
+        const error = 'Missing required environment variables: DISCO_BUCKET or DISCO_TABLE'
+        console.error(error)
+        response.Status = 'FAILED'
+        response.Reason = error
+        await sendResponse(event, response)
+        return
+      }
+
       // Initialize AWS clients
       const cfnClient = new CloudFormationClient({})
       const dynamoClient = new DynamoDBClient({})
@@ -30,36 +43,37 @@ export async function handler (event) {
       })
       const { StackResources } = await cfnClient.send(describeCommand)
 
-      // Build resource map: { resourceName: resourceArn }
-      const resourceMap = {}
-      for (const resource of StackResources) {
-        const name = resource.LogicalResourceId
-        const arn = resource.PhysicalResourceId
-        resourceMap[name] = arn
-      }
+      // Transform resources to simple format for pragma organizer
+      const resources = StackResources.map(resource => ({
+        LogicalResourceId: resource.LogicalResourceId,
+        PhysicalResourceId: resource.PhysicalResourceId
+      }))
 
-      console.log('Discovered resources:', resourceMap)
+      // Organize resources by pragma type
+      const resourceMap = organizeByPragma(resources)
 
-      // Store in DynamoDB
+      console.log('Discovered resources:', JSON.stringify(resourceMap, null, 2))
+
+      // Store in DynamoDB with stack ID as partition key
       const putItemCommand = new PutItemCommand({
         TableName: process.env.DISCO_TABLE,
         Item: {
-          idx: { S: 'resources' },
+          idx: { S: stackId },
           data: { S: JSON.stringify(resourceMap) }
         }
       })
       await dynamoClient.send(putItemCommand)
 
-      // Store in S3
+      // Store in S3 with stack ID in key path
       const putObjectCommand = new PutObjectCommand({
         Bucket: process.env.DISCO_BUCKET,
-        Key: 'resources.json',
+        Key: `${stackId}/resources.json`,
         Body: JSON.stringify(resourceMap, null, 2),
         ContentType: 'application/json'
       })
       await s3Client.send(putObjectCommand)
 
-      console.log('Successfully stored resource discovery data')
+      console.log(`Successfully stored resource discovery data for stack ID: ${stackId}`)
     } else if (requestType === 'Delete') {
       // No-op for Delete events - disco-down handles cleanup
       console.log('Delete event received - no action required for disco-up')

@@ -21,5 +21,5 @@ foo
 #  pk *
 #  sk **
 
-#@http
-#get /
+@http
+get /

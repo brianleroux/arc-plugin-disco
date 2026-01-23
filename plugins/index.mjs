@@ -172,7 +172,7 @@ export let deploy = {
       }
     }
 
-    // Add DISCO_BUCKET and DISCO_TABLE to all Lambda function environment variables
+    // Add DISCO_BUCKET, DISCO_TABLE, and DISCO_STACK_ID to all Lambda function environment variables
     for (const [name, resource] of Object.entries(cloudformation.Resources)) {
       const isLambda = resource.Type === 'AWS::Lambda::Function' || resource.Type === 'AWS::Serverless::Function'
       if (isLambda && resource.Properties?.Environment?.Variables) {
@@ -181,6 +181,12 @@ export let deploy = {
         }
         resource.Properties.Environment.Variables.DISCO_TABLE = {
           Ref: 'DiscoTable'
+        }
+        // Extract the UUID from the StackId ARN
+        // StackId format: arn:aws:cloudformation:region:account:stack/stack-name/uuid
+        // We use Fn::Select to get the last part after splitting by '/'
+        resource.Properties.Environment.Variables.DISCO_STACK_ID = {
+          'Fn::Select': [2, { 'Fn::Split': ['/', { Ref: 'AWS::StackId' }] }]
         }
       }
     }

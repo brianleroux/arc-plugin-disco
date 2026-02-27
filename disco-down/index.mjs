@@ -1,5 +1,7 @@
 import { S3Client, ListObjectsV2Command, ListObjectVersionsCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3'
 
+import { sendResponse } from '../disco-shared/cfn-response.mjs'
+
 export async function handler (event) {
   console.log('Custom Resource Event:', JSON.stringify(event, null, 2))
 
@@ -117,32 +119,4 @@ async function emptyBucket(s3Client, bucketName) {
     
     continuationToken = listResponse.NextContinuationToken
   } while (continuationToken)
-}
-
-async function sendResponse(event, response) {
-  const responseBody = JSON.stringify(response)
-  const https = await import('https')
-  const { URL } = await import('url')
-  
-  const parsedUrl = new URL(event.ResponseURL)
-  const options = {
-    hostname: parsedUrl.hostname,
-    port: 443,
-    path: parsedUrl.pathname + parsedUrl.search,
-    method: 'PUT',
-    headers: {
-      'Content-Type': '',
-      'Content-Length': responseBody.length
-    }
-  }
-
-  return new Promise((resolve, reject) => {
-    const request = https.request(options, (res) => {
-      console.log('CloudFormation response status:', res.statusCode)
-      resolve()
-    })
-    request.on('error', reject)
-    request.write(responseBody)
-    request.end()
-  })
 }
